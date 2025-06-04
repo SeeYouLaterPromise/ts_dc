@@ -1,0 +1,13 @@
+*.o
+*.a
+!lib/libbsc.a
+!lib/libSZ3c.a
+example_data
+tmp
+tmp.cmp
+tmp.data 
+compression_test
+
+
+.vscode
+
