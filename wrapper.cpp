@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <zlib.h>
 #include <zstd.h>
+// If you are a ordinary linux user like me without sudo permission,
+// you can install zstd and zlib by conda: then add the include path to your VSCode C/C++ configuration.
+// Ctrl+Shift+P to open: C/C++: Edit Configurations (UI) to add `/mnt/driver_g/users/usr6/.conda/envs/test/include` in the `Include path` field.
+
 
 ssize_t zstd_compress(double* in, ssize_t len, uint8_t** out, double error) {
         ssize_t max_size = ZSTD_compressBound(len * sizeof(double));

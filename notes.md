@@ -1,0 +1,3 @@
+I can understand here why pass the pointer of pointer d1, which means to give the ability to modify d1, right? However, I wonder, the reason I use pointer to operate the variable is that common variable lies in the stack, different function will have different stack, so if you modify the passed common variable in another function will not affect the original function right? BUT here we pass a pointer, which lies in heap, why I need the pointer of this pointer to finish modification?
+
+> When you pass a parameter into a function, this function would make a local copy of your passed one, whatever variable or pointer.

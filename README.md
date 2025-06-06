@@ -12,3 +12,5 @@
 * SZ3: Code from https://github.com/szcompressor/SZ3.git
 * LFZip: Code based on https://github.com/shubhamchandak94/LFZip.git
 * Machete: A novel lossy and efficient compressor with improved compression ratio for small error bounds under the point-wise absolute error control. Code from https://github.com/Gyhanis/Machete
+
+### compression_test.cpp

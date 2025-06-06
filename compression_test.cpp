@@ -107,18 +107,18 @@ int bsize_list[] = {500, 1000, 2000, EOL};
 ///////////////////////// Setting End ////////////////////////////
 
 
-int check(double *d0, double *d1, size_t len, double error) {
+int check(double *d_org, double *d_cmp, size_t len, double error) {
         if (error == 0) {
                 for (int i = 0; i < len; i++) {
-                        if (d0[i] != d1[i]) {
-                                printf("%d: %.16lf(%lx) vs %.16lf(%lx)\n", i, d0[i], ((uint64_t*)d0)[i], d1[i], ((uint64_t*)d1)[i]);
+                        if (d_org[i] != d_cmp[i]) {
+                                printf("%d: %.16lf(%lx) vs %.16lf(%lx)\n", i, d_org[i], ((uint64_t*)d_org)[i], d_cmp[i], ((uint64_t*)d_cmp)[i]);
                                 return -1;
                         }
                 }
         } else {
                 for (int i = 0; i < len; i++) {
-                        if (std::abs(d0[i] - d1[i]) > error) {
-                                printf("%d(%lf): %lf vs %lf\n", i, d0[i] - d1[i], d0[i], d1[i]);
+                        if (std::abs(d_org[i] - d_cmp[i]) > error) {
+                                printf("%d(%lf): %lf vs %lf\n", i, d_org[i] - d_cmp[i], d_org[i], d_cmp[i]);
                                 return -1;
                         }
                 }
@@ -126,47 +126,78 @@ int check(double *d0, double *d1, size_t len, double error) {
         return 0;
 }
 
+
+/**
+ * Test a single file with a specific compressor.
+ * @param file The file to be tested.
+ * @param c The index of the compressor in the compressors array.
+ * @return If collation fails, return -1; otherwise, return 0.
+ */
 int test_file(FILE* file, int c, int chunk_size, double error) {
-        double* d0 = (double*) malloc(chunk_size * sizeof(double));
-        uint8_t *d1;
-        double *d2 = (double*) malloc(2 * chunk_size * sizeof(double));
+        // d_org is the original data read from the file
+        // d_cmp is the compressed data
+        // d_dcmp is the decompressed data
+        double* d_org = (double*) malloc(chunk_size * sizeof(double));
+        uint8_t *d_cmp;
+
+        // why d_dcmp is twice the size of chunk_size?
+        double *d_dcmp = (double*) malloc(2 * chunk_size * sizeof(double));
         int64_t start;
 
-        // compress
-        FILE* fc = fopen("tmp.cmp", "w");
+        
+        // Ensure the "cmp_product" directory exists
+        system("mkdir -p cmp_product");
+
+        // Save each compressor's compressed data to a unique file
+        char cmp_path[257];
+        sprintf(cmp_path, "cmp_product/tmp_%s.cmp", compressors[c].name);
+
+        FILE* fc = fopen(cmp_path, "w");
         int block = 0;
+        // compress
         while(!feof(file)) {
-                // len0 is the size of the data read from the file
-                // Maybe some compressor needs this variable
-                ssize_t len0 = fread(d0, sizeof(double), chunk_size, file);
+                // len0 usually equals chunk_size, but can be less at the end of the file
+                // This line reads a chunk of data from the file into d_org
+                ssize_t len0 = fread(d_org, sizeof(double), chunk_size, file);
                 if (len0 == 0) break;
 
+                // real encoding happens here
                 start = clock();
-                ssize_t len1 = compressors[c].compress(d0, len0, &d1, error);
+                ssize_t len1 = compressors[c].compress(d_org, len0, &d_cmp, error);
                 compressors[c].perf.cmp_time += clock() - start;
                 compressors[c].perf.cmp_size += len1;
                 
+                // `fwrite` writes the data that the pointer points to
+                // so you should pass the pointer, the size of the elem of data
+                // and the number of elements to write
+
                 fwrite(&len1, sizeof(len1), 1, fc);
-                fwrite(d1, 1, len1, fc);
-                free(d1);
+                fwrite(d_cmp, 1, len1, fc);
+                free(d_cmp);
                 block++;
         }
         fclose(fc);
 
-        // decompress
+        // rewind the file pointer to the beginning of the data file for collation
         rewind(file);
-        fc = fopen("tmp.cmp", "r");
+        fc = fopen(cmp_path, "r");
         block = 0;
+        // decompress
         while(!feof(file)) {
-                size_t len0 = fread(d0, sizeof(double), chunk_size, file);
+                size_t len0 = fread(d_org, sizeof(double), chunk_size, file);
                 if (len0 == 0) break;
                 
                 size_t len1;
+
+                // (void) is C idiomatic for intetionally ignoring the return value
+                // let reader know that this is not a careless ignore, but intentional.
                 (void)!fread(&len1, sizeof(len1), 1, fc);
-                d1 = (uint8_t*) malloc(len1);
-                (void)!fread(d1, 1, len1, fc);
+                d_cmp = (uint8_t*) malloc(len1);
+                (void)!fread(d_cmp, 1, len1, fc);
+
+                // real decoding happens here
                 start = clock();
-                ssize_t len2 = compressors[c].decompress(d1, len1, d2, error);
+                ssize_t len2 = compressors[c].decompress(d_cmp, len1, d_dcmp, error);
                 compressors[c].perf.dec_time += clock() - start;
                 compressors[c].perf.ori_size += len2 * sizeof(double);
 
@@ -176,23 +207,29 @@ int test_file(FILE* file, int c, int chunk_size, double error) {
                         case Lossless: terror = 0; break;
                 }
 
-                if (len0 != len2 || check(d0, d2, len0, terror)) {
-                        printf("Check failed, dumping data to tmp.data\n");
-                        FILE* dump = fopen("tmp.data", "w");
-                        fwrite(d0, sizeof(double), len0, dump);
+                if (len0 != len2 || check(d_org, d_dcmp, len0, terror)) {
+                        // we give more specific name to the dump file
+                        // so that we can identify which compressor and block caused the error
+                        system("mkdir -p dump");
+                        char dump_path[257];
+                        sprintf(dump_path, "dump/problem_%s_%d.data", compressors[c].name, block);
+                        printf("Check failed, dumping data to dump_path\n");
+
+                        FILE* dump = fopen(dump_path, "w");
+                        fwrite(d_org, sizeof(double), len0, dump);
                         fclose(dump);
 
-                        free(d1); free(d2);
-                        free(d0); fclose(fc);
+                        free(d_cmp); free(d_dcmp);
+                        free(d_org); fclose(fc);
                         return -1;
                 }
-                free(d1);
+                free(d_cmp);
                 block++;
         }
         fclose(fc);
 
-        free(d0);
-        free(d2);
+        free(d_org);
+        free(d_dcmp);
         return 0;
 }
 
@@ -206,6 +243,9 @@ void draw_progress(int now, int total, int len) {
         for (; i < len; i++) {
                 fputc('-', stderr);
         }
+        // In linux, \r moves the cursor to the beginning of the line (carriage return)
+        // Different from Windows, carriage return `Enter` (like `\r\n`) does not create a new line.
+        // It just moves the cursor to the beginning of the current line.
         fputc('\r', stderr);
 }
 
@@ -213,32 +253,44 @@ int test_dataset(int ds, int chunk_size) {
         printf("**************************************\n");
         printf("      Testing on %s(%.8lf)\n", datasets[ds].name, datasets[ds].error);
         printf("**************************************\n");
-        fflush(stdout);
+        fflush(stdout); // Ensure the print message appears immediately.
+
         DIR* dir = opendir(datasets[ds].path);
         char filepath[257];
         struct dirent *ent;
         
+        // Count the number of files in the directory
         int file_cnt = 0;
         while ((ent = readdir(dir)) != NULL) {
+                // DT_REG indicates that a directory entry is a regular file.
                 if (ent->d_type == DT_REG) {
                         file_cnt++;
                 }
         }
+        
+        // readdir(dir) will move the directory pointer, so we need to rewind it.
         rewinddir(dir);
         
         int cur_file = 0;
         draw_progress(cur_file, file_cnt, 80);
         while ((ent = readdir(dir)) != NULL) {
+                // prevent processing hidden files and directories ('.' and '..')
                 if (ent->d_name[0] == '.') {
                         continue;
                 }
+                // This line creates a file path string by combining the dataset path and the file name.
                 sprintf(filepath, "%s/%s", datasets[ds].path, ent->d_name);
+                
+                // the result is stored in `filepath` buffer for later use. (e.g., opening the file)
                 FILE* file = fopen(filepath, "rb");
                 for (int i = 0; compressor_list[i] != EOL; i++) {
                         if (compressor_list[i] == SKIP) {
                                 continue;
                         }
+                        // ensure the file pointer is at the beginning of the file
                         fseek(file, 0, SEEK_SET);
+
+                        // In C, any non-zero (e.g. -1 -> true) value is considered true in an if condition.
                         if (test_file(file, compressor_list[i], chunk_size, datasets[ds].error)) {
                                 printf("Error Occurred while testing %s, skipping\n", compressors[compressor_list[i]].name);
                                 compressor_list[i] = SKIP;
@@ -274,9 +326,10 @@ int main() {
 
 // #define DEBUG_LAST_FAILED
 #ifdef DEBUG_LAST_FAILED
-        FILE* fp = fopen("tmp.data", "r");
+        // according to the dump file, debug
+        FILE* fp = fopen("dump.data", "r");
         if (fp == NULL) {
-                printf("Failed to open tmp.data\n");
+                printf("Failed to open dump.data\n");
         }
         test_file(fp, 0, 1000, 1E-3);
         printf("Test finished\n");
@@ -290,6 +343,7 @@ int main() {
                                 if (compressor_list[k] != SKIP) {
                                         report(compressor_list[k]);
                                 }
+                                // reset (clear) the performance structure (Perf) after each a test/report cycle.
                                 __builtin_memset(&compressors[compressor_list[k]].perf, 0, sizeof(Perf));
                         }
                 }
