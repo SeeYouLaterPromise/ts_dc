@@ -33,12 +33,18 @@ initBitReader(BitReader* reader, uint32_t * input, size_t len)
 #endif 
 }
 
+/**
+ * Return the next `len` bits from the buffer without shifting it.
+ */
 static inline uint64_t 
 peek(BitReader* reader, size_t len) {
         assert(len <= 32);
         return reader->buffer >> 64 - len;
 }
 
+/**
+ * Shift the buffer left by `len` bits, discarding the bits just read.
+ */
 static inline void 
 forward(BitReader* reader, size_t len) {
         assert(len <= 32);

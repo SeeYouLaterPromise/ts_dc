@@ -55,7 +55,9 @@ struct {
         ssize_t (*compress) (double* input, ssize_t len, uint8_t** output, double error);
         ssize_t (*decompress) (uint8_t* input, ssize_t size, double* output, double error);
         Perf perf;
-} compressors[] = {
+} 
+
+compressors[] = {
         { "Machete",    Type::Lossy,    machete_compress<lorenzo1, hybrid>,     machete_decompress_lorenzo1_hybrid,     empty},
         { "LFZip",      Type::Lossy,    lfzip_compress,                         lfzip_decompress,                       empty},
         { "SZ3",        Type::Lossy,    SZ_compress_wrapper,                    SZ_decompress_wrapper,                  empty},
@@ -71,7 +73,9 @@ struct {
         char name[16];
         const char* path;
         double error;
-} datasets[] = {
+} 
+
+datasets[] = {
         // { "GeoLife",    "./example_data/Geolife"   , 1E-4}, 
         // { "GeoLife",    "./example_data/Geolife"   , 5E-5}, 
         // { "GeoLife",    "./example_data/Geolife"   , 1E-5}, 
@@ -132,6 +136,8 @@ int test_file(FILE* file, int c, int chunk_size, double error) {
         FILE* fc = fopen("tmp.cmp", "w");
         int block = 0;
         while(!feof(file)) {
+                // len0 is the size of the data read from the file
+                // Maybe some compressor needs this variable
                 ssize_t len0 = fread(d0, sizeof(double), chunk_size, file);
                 if (len0 == 0) break;
 

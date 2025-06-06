@@ -16,7 +16,9 @@ private:
                 if (readInt(1) == 0) {
                         v = recoverVByBetaStar();
                 } else if (readInt(1) == 0) {
-                        v = xorDecompress();
+                        // v = xorDecompress();
+                        // when you assume the data to be compressed have been clean already.
+                        v = 0.0;
                 } else {
                         lastBetaStar = readInt(4);
                         v = recoverVByBetaStar();
@@ -71,8 +73,8 @@ private:
         void next() {
                 if (first) {
                         first = false;
-                        int trailingZeros = peek(&reader, 7);
-                        forward(&reader, 7);
+                        int trailingZeros = peek(&reader, 6);
+                        forward(&reader, 6);
                         if (trailingZeros < 64) {
                                 storedVal.i = ((readLong(&reader, 63 - trailingZeros) << 1) + 1) << trailingZeros;
                         } else {

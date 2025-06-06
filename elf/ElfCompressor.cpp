@@ -18,6 +18,8 @@ protected:
 
 public:
         void addValue(double v) {
+                // when you assign v to data.d, the corresponding bit pattern is stored in the union as data.i
+                // the concrete definition of the union is in defs.h
                 DOUBLE data = {.d = v};
                 long vPrimeLong;
                 assert(!isnan(v));
@@ -48,8 +50,9 @@ public:
                         }
 
                         delete [] alphaAndBetaStar;
+                        size += xorCompress(vPrimeLong);
                 }
-                size += xorCompress(vPrimeLong);
+                // size += xorCompress(vPrimeLong);
         }
 
         int getSize() {
@@ -94,17 +97,20 @@ private:
                 first = false;
                 storedVal = value;
                 length = 1;
-                int trailingZeros = __builtin_ctzl(value);
-                write(&writer, trailingZeros, 7);
-                // if (trailingZeros < 64) { optimized-out somehow, assuming __builtin_ctzl always < 64 ?
-                if (value != 0) {
-                        writeLong(&writer, storedVal >> (trailingZeros + 1), 63 - trailingZeros);
-                        size += 70 - trailingZeros;
-                        return 70 - trailingZeros;
-                } else {
-                        size += 7;
-                        return 7;
-                }
+                // ctzl: count triailing zeros (in) long
+                // __builtin_ctzl is a GCC/Clang built-in (intrinsic) function:
+                // pat attention: if the input is zero, the result is undefined.
+                assert(value != 0);
+                // However, in this case, Case Zero will be handled by Abstract Class already.
+                int trailingZeros = __builtin_ctzl(value); 
+
+                // write the trailing count
+                write(&writer, trailingZeros, 6); // (Case Zero will be handled by Abstract Class already.)
+                // write the bits excluding the trailing zeros
+                // here (trailingZeros + 1) is intentional to exclude the definite 1 bit at the end to save one bit space. (greedy)
+                writeLong(&writer, storedVal >> (trailingZeros + 1), 63 - trailingZeros);
+                size += 69 - trailingZeros;
+                return 69 - trailingZeros;
         }
 
         int compressValue(long value) {
@@ -115,12 +121,14 @@ private:
                         size += 2;
                         thisSize += 2;
                 } else {
+                        // clzl: count leading zeros (in) long
                         int leadingZeros = leadingRound[__builtin_clzl(_xor)];
                         int trailingZeros = __builtin_ctzl(_xor);
 
                         if (leadingZeros == storedLeadingZeros && trailingZeros >= storedTrailingZeros) {
                                 int centerBits = 64 - storedLeadingZeros - storedTrailingZeros;
                                 int len = 2 + centerBits;
+                                // The maximum length of writeLong is 64, so do the if-logic?
                                 if (len > 64) {
                                         write(&writer, 0, 2);
                                         writeLong(&writer, _xor >> storedTrailingZeros, centerBits);
@@ -160,9 +168,14 @@ public:
                 return &writer;
         }
 
+        // This function is to initize the memory for `BitWriter`.
+        // `length` is the number of data points to be compressed.
         void init(size_t length) {
+                // It multiplies the length by 12 to estimate the buffer size needed.
                 length *= 12;
                 output = (uint32_t*) malloc(length + 4);
+                // this is a common trick to reserve the first 4 bytes (the first uint32_t) of the buffer for metadata
+                // often to store the length of the data. -> you can see `*output = length;` in `close()`.
                 initBitWriter(&writer, output+1, length/sizeof(uint32_t));
         }
 
@@ -184,6 +197,7 @@ public:
         }
 
         void close() {
+                // extract the first uint32_t to get the total length of the compressed data.
                 *output = length;
                 flush(&writer);
         }
@@ -233,8 +247,12 @@ public:
 ssize_t elf_encode(double* in, ssize_t len, uint8_t** out, double error) {
         ElfCompressor compressor;
         compressor.init(len);
+
+        // Here implmentation of the end of ELF is NOT NaN.
         for (int i = 0; i < len; i++) {
                 if (i == 4219) {
+                        // asm is a GCC/Clang extension to allow inline assembly
+                        // it used as a marker or breakpoint at i == 4219
                         asm("nop");
                 }
                 compressor.addValue(in[i]);

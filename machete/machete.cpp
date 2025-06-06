@@ -1,5 +1,7 @@
 #include "defs.h"
 #include <stdlib.h>
+#include <stdio.h>
+
 
 typedef struct __attribute__((__packed__)) {
         uint32_t data_len;
